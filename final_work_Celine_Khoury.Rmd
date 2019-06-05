@@ -1,0 +1,226 @@
+---
+title: "final_work_CelineKhoury"
+author: "Celine Khoury"
+date: "12/21/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This R Markdown document contains the data of stocks, their volatility as well as the return. An analysis of the stocks has been done by creating clusters and from these clusters different portfolios were selected from which the optimal option was chosen which is mainly to invest in a cluster where you have intermediate, close to high return and intermediate to low volatility. 
+
+
+```
+``` 
+### Install the packages needed 
+
+```{r echo = FALSE}
+
+## Get data.table package if not installed 
+
+if(!"data.table" %in% installed.packages()) {
+  install.packages("data.table")
+} else {
+  print('data.table package already installed')
+}
+library(data.table)
+
+
+## Get readxl package if not installed 
+
+if(!"readxl" %in% installed.packages()) {
+  install.packages("readxl")
+} else {
+  print('readxl package already installed')
+}
+library(readxl)
+
+
+## Get quantmod package if not installed
+
+if(!"quantmod" %in% installed.packages()) {
+  install.packages("quantmod")
+} else {
+  print('quantmod package already installed')
+}
+library(quantmod)
+
+
+## Get shiny package if not installed
+
+if(!"shiny" %in% installed.packages()) {
+  install.packages("shiny")
+} else {
+  print('shiny package already installed')
+}
+library(shiny)
+
+## Get ggalt package if not installed 
+if(!"ggalt" %in% installed.packages()) {
+  install.packages("ggalt")
+} else {
+  print('ggalt package already installed')
+}
+library(ggalt)
+
+## Get ggplot2 package if not installed 
+if(!"ggplot2" %in% installed.packages()) {
+  install.packages("ggplot2")
+} else {
+  print('ggplot2 package already installed')
+}
+library(ggplot2)
+
+```
+
+
+```{r}
+Symbols<- read_xlsx('nasdaq_symbols.xlsx') 
+Get_Stocks<- function(Symbols) {
+RV_Stocks <- NULL;
+
+for(i in Symbols$Symbol) {
+stock_current<- as.data.table(quantmod::getSymbols(i, from='2009-01-01', to='2018-11-30', auto.assign = F))
+colnames(stock_current)<-c('date','open','high','low','close','volume','adj')
+stock_current<-as.xts(stock_current)
+return <- mean(dailyReturn(stock_current$close))
+vol <- sd(dailyReturn(stock_current$close))
+
+RV_Stocks <- rbind(RV_Stocks, c(i,return,vol))
+} 
+ return (RV_Stocks)
+}
+
+RV_Stocks <- Get_Stocks(Symbols)
+head(RV_Stocks)
+```
+
+Converting it to a data table and changing the column names 
+and changing the return and volatility columns classes from character to numeric 
+
+```{r echo= FALSE}
+
+RV_Stocks<-as.data.table(RV_Stocks)
+
+colnames(RV_Stocks) <-c('Stocks', 'Return', 'Volatility')
+
+
+RV_Stocks[,2]<-as.numeric(RV_Stocks$Return)
+
+RV_Stocks[,3]<-as.numeric(RV_Stocks$Volatility)
+
+
+```
+
+
+
+ Creating a shiny app where one can choose on the number of clusters (K means clusters)
+
+```{r echo= FALSE}
+ui <- fluidPage(
+  titlePanel("Number of Clusters"),
+  sidebarLayout(
+    sidebarPanel(
+    
+      sliderInput('k',"Select a K:",min = 3 , max = 7, step =1 , value = 4)
+    ),
+    mainPanel(
+      plotOutput("stockPlot")
+    )
+  )
+)
+
+
+server <- function(input, output) {
+  output$stockPlot <- renderPlot({
+    RV_Stocks.cluster <- kmeans(RV_Stocks[,2:3], input$k, nstart=10)
+    RV_Stocks<-as.data.table(RV_Stocks)
+    RV_Stocks [, cluster:= as.factor(RV_Stocks.cluster$cluster)]
+      p<-ggplot(RV_Stocks, aes(Return, Volatility, color = cluster))+geom_point()+geom_encircle(aes(x=Return, y=Volatility,color = cluster), data=RV_Stocks,   size=2, expand=0.01)
+   
+    p
+  })
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
+
+```
+
+
+For investors to buy stocks or invest in them they want to maximize the return while having minimum volatility for it to be less risky although increased volatility in the stock market provides greater opportunities to profit. 
+
+Based on the clusters visualized, it is recommendable to make portfolios out of the clusters that you have. 
+
+Here we can create three portfolios of the stocks with k = 4 (optimal clustering)
+First one with an intermediate return and low volatility (cluster 1). 
+Second one with intermediate to low volatility and intermediate to high return (cluster 2). 
+Third one with high return and high volatility which comprises of both clusters 3 and 4.  
+
+The optimal option is to invest here in cluster number 2 where you have intermediate, close to high return and intermediate approaching low volatility where the investors will be facing less risks and an intermediate to a high return. 
+
+
+
+
+ Creating Sharpe ratio which is used to help investors understand the retun of an investment compared to its risk
+
+```{r}
+
+RV_Stocks$Sharpe_ratio<-RV_Stocks$Return / RV_Stocks$Volatility 
+
+head(RV_Stocks)
+
+```
+
+
+
+
+
+### Creating a shiny app where one can see the volatility, the return and the Sharpe ratio of the different stocks 
+
+```{r echo= FALSE}
+
+
+ui <- fluidPage(
+  titlePanel("Stocks and their characteristics"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput('variable',
+                'Select a variable:', 
+                c('Sharpe Ratio', 'Volatility', 'Avg Returns'),
+                selected = 'Sharpe Ratio') ,
+      sliderInput('n',"Top _ Stocks:",min = 1 , max = nrow(Symbols), step =1 , value = 4)
+    ),
+    mainPanel(
+      plotOutput("stockPlot")
+    )
+  )
+)
+
+
+server <- function(input, output) {
+  output$stockPlot <- renderPlot({
+    if(input$variable == 'Sharpe Ratio') {
+      new_RV_Stocks<-RV_Stocks[order(-Sharpe_ratio)][1:input$n]
+      p<-ggplot(new_RV_Stocks, aes(x=Stocks, y=Sharpe_ratio, fill=Stocks) )+geom_bar(stat = 'identity')  + theme(axis.text.x =element_text( angle = 90) )
+    } else if (input$variable == 'Volatility') {
+      new_RV_Stocks<-RV_Stocks[order(-Volatility)][1:input$n]
+      p<-ggplot(new_RV_Stocks, aes(x=Stocks, y=Volatility, fill=Stocks) )+geom_bar(stat = 'identity') + theme(axis.text.x =element_text( angle = 90) )
+    } else if (input$variable == 'Avg Returns') {
+      new_RV_Stocks<-RV_Stocks[order(-Return)][1:input$n]
+      p<-ggplot(new_RV_Stocks, aes(x=Stocks, y=Return, fill=Stocks) )+geom_bar(stat = 'identity') + theme(axis.text.x =element_text( angle = 90) )
+    }
+    p
+  })
+}
+
+# Run the application 
+
+shinyApp(ui = ui, server = server)
+```
+
+
